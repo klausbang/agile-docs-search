@@ -25,3 +25,8 @@ b) when the line context slider is at e.g., 1, it means show the line before the
 4) In the output field both the full context and the limited context (controlled with the slider) are shown. Add an option to show only the limited context. Add this option selector next to the limited context slider.
 
 5) Keep the value of "Show only limited context" settings between searches. Default value shall be true.
+
+6) In the output window, add a hide checkbox to each found document and to each match within the document, so that the user can select to hide on both levels. 
+Add also collapse all/extend all buttons at the right side of the square field that contains the line context slider and the show only limited context checkbox, and right above the collapse/extend arrows that are at the right side of the file names.
+
+Add also a discrete button at the bottom of the left panel that toggles the names of the individual controls, that can be used for easy communication of which controls to modify. 

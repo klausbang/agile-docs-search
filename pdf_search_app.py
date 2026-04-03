@@ -330,6 +330,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       height: 14px;
     }
 
+    .checkbox-compact {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 600;
+      margin-left: 6px;
+      flex-shrink: 0;
+    }
+
     button {
       padding: 9px 15px;
       border-radius: 8px;
@@ -415,6 +423,23 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       max-width: 100%;
     }
 
+    .line-tools {
+      margin-left: auto;
+      display: inline-flex;
+      gap: 6px;
+    }
+
+    .btn-mini {
+      font-size: 11px;
+      padding: 5px 9px;
+      border-radius: 6px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .btn-mini:hover { background: var(--bg); }
+
     /* ── Result card ── */
     .result-card {
       background: var(--surface);
@@ -460,6 +485,15 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     }
     .collapsed .chevron { transform: rotate(-90deg); }
 
+    .doc-hidden .result-header {
+      background: #f8fafc;
+      opacity: 0.75;
+    }
+
+    .doc-hidden .result-body {
+      display: none;
+    }
+
     /* Collapse body */
     .result-body { border-top: 1px solid var(--border); }
     .collapsed .result-body { display: none; }
@@ -470,6 +504,23 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       border-bottom: 1px solid var(--border);
     }
     .occurrence:last-child { border-bottom: none; }
+
+    .occurrence.match-hidden .snippet,
+    .occurrence.match-hidden .occ-page,
+    .occurrence.match-hidden .occ-term {
+      display: none;
+    }
+
+    .match-hidden-note {
+      display: none;
+      font-size: 11px;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .occurrence.match-hidden .match-hidden-note {
+      display: inline;
+    }
 
     .occ-meta {
       display: flex; align-items: center; gap: 8px;
@@ -515,6 +566,43 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       font-size: 12px; color: #b91c1c;
     }
 
+    .panel-footer {
+      margin-top: auto;
+      padding-top: 6px;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .btn-discrete {
+      background: transparent;
+      border: 1px dashed #cbd5e1;
+      color: #64748b;
+      font-size: 11px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      width: auto;
+    }
+
+    .btn-discrete:hover { background: #f8fafc; }
+
+    [data-control-name] { position: relative; }
+
+    body.show-control-names [data-control-name]::after {
+      content: attr(data-control-name);
+      position: absolute;
+      top: -18px;
+      right: 0;
+      font-size: 10px;
+      line-height: 1;
+      color: #475569;
+      background: #e2e8f0;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 2px 4px;
+      white-space: nowrap;
+      z-index: 2;
+    }
+
     /* ── Scrollbar ── */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -550,8 +638,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div class="form-group">
       <label for="dirInput">Search Directory</label>
       <div class="dir-row">
-        <input type="text" id="dirInput" placeholder="Path to search directory…">
-        <button class="btn-outline" id="browseBtn" onclick="browseDir()">Browse</button>
+        <input type="text" id="dirInput" data-control-name="dirInput" placeholder="Path to search directory…">
+        <button class="btn-outline" id="browseBtn" data-control-name="browseBtn" onclick="browseDir()">Browse</button>
       </div>
     </div>
 
@@ -560,26 +648,30 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         Search Terms
         <span class="hint">one per line</span>
       </label>
-      <textarea id="termsInput" rows="9"
+      <textarea id="termsInput" data-control-name="termsInput" rows="9"
         placeholder="Enter search terms, one per line&#10;&#10;Examples:&#10;hearing aid&#10;signal processing&#10;firmware update"></textarea>
       <div class="checkbox-row">
-        <label class="checkbox-opt">
+        <label class="checkbox-opt" data-control-name="fullWordInput">
           <input type="checkbox" id="fullWordInput">
           Only full word/phrase
         </label>
-        <label class="checkbox-opt">
+        <label class="checkbox-opt" data-control-name="caseSensitiveInput">
           <input type="checkbox" id="caseSensitiveInput">
           Case sensitive
         </label>
       </div>
     </div>
 
-    <button class="btn-primary" id="searchBtn" onclick="startSearch()">Search PDFs</button>
-    <button class="btn-cancel"  id="cancelBtn" onclick="cancelSearch()" style="display:none">Cancel</button>
+    <button class="btn-primary" id="searchBtn" data-control-name="searchBtn" onclick="startSearch()">Search PDFs</button>
+    <button class="btn-cancel"  id="cancelBtn" data-control-name="cancelBtn" onclick="cancelSearch()" style="display:none">Cancel</button>
 
     <div id="progress" style="display:none">
       <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
       <div class="prog-text"  id="progText">Preparing…</div>
+    </div>
+
+    <div class="panel-footer">
+      <button class="btn-discrete" id="controlNamesBtn" data-control-name="controlNamesBtn" onclick="toggleControlNames()">Show control names</button>
     </div>
   </aside>
 
@@ -590,14 +682,18 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <p>Select a directory and enter search terms, then click <strong>Search PDFs</strong>.</p>
     </div>
     <div id="summary" style="display:none"></div>
-    <div id="lineContextControl">
+    <div id="lineContextControl" data-control-name="lineContextControl">
       <span>Line context:</span>
-      <input type="range" id="lineContextSlider" min="0" max="8" value="0">
+      <input type="range" id="lineContextSlider" data-control-name="lineContextSlider" min="0" max="8" value="0">
       <span><strong id="lineContextValue">0</strong> line(s) before/after</span>
-      <label class="checkbox-opt" style="margin-left:14px">
+      <label class="checkbox-opt" style="margin-left:14px" data-control-name="limitedOnlyInput">
         <input type="checkbox" id="limitedOnlyInput" checked>
         Show only limited context
       </label>
+      <div class="line-tools">
+        <button class="btn-mini" id="expandAllBtn" data-control-name="expandAllBtn" onclick="expandAllResults()">Expand all</button>
+        <button class="btn-mini" id="collapseAllBtn" data-control-name="collapseAllBtn" onclick="collapseAllResults()">Collapse all</button>
+      </div>
     </div>
     <div id="resultsList"></div>
   </main>
@@ -658,6 +754,40 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       const term = el.dataset.term || '';
       renderLineSnippet(el, lines, anchor, term, activeSearchOptions, radius);
     });
+  }
+
+  function applyFullContextVisibility() {
+    const hide = document.getElementById('limitedOnlyInput').checked;
+    document.querySelectorAll('.full-snippet').forEach((el) => {
+      el.style.display = hide ? 'none' : '';
+    });
+  }
+
+  function collapseAllResults() {
+    document.querySelectorAll('.result-card').forEach((card) => card.classList.add('collapsed'));
+  }
+
+  function expandAllResults() {
+    document.querySelectorAll('.result-card').forEach((card) => card.classList.remove('collapsed'));
+  }
+
+  function toggleControlNames() {
+    const enabled = document.body.classList.toggle('show-control-names');
+    document.getElementById('controlNamesBtn').textContent = enabled
+      ? 'Hide control names'
+      : 'Show control names';
+  }
+
+  function toggleDocumentHidden(input) {
+    const card = input.closest('.result-card');
+    if (!card) return;
+    card.classList.toggle('doc-hidden', input.checked);
+  }
+
+  function toggleMatchHidden(input) {
+    const occ = input.closest('.occurrence');
+    if (!occ) return;
+    occ.classList.toggle('match-hidden', input.checked);
   }
 
   // ── Browse ──────────────────────────────────────────────────────────────────
@@ -808,10 +938,15 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         '</div>' +
         '<div class="result-path">' + esc(path) + '</div>' +
       '</div>' +
+      '<label class="checkbox-opt checkbox-compact" title="Hide this document" onclick="event.stopPropagation()">' +
+        '<input type="checkbox" class="doc-hide-input"> Hide' +
+      '</label>' +
       '<span class="badge">' + hits.length + '</span>' +
       '<span class="chevron">▼</span>';
 
     header.addEventListener('click', () => card.classList.toggle('collapsed'));
+    const docHideInput = header.querySelector('.doc-hide-input');
+    docHideInput.addEventListener('change', (e) => toggleDocumentHidden(e.target));
 
     // Body: occurrences
     const body = document.createElement('div');
@@ -824,14 +959,20 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       occ.className = 'occurrence';
       occ.innerHTML =
         '<div class="occ-meta">' +
+          '<label class="checkbox-opt checkbox-compact" title="Hide this match">' +
+            '<input type="checkbox" class="match-hide-input"> Hide match' +
+          '</label>' +
           '<span class="occ-page"><a href="' + pdfUrl + '" target="_blank">Page ' + hit.page + '</a></span>' +
           '<span class="occ-term">' + esc(hit.term) + '</span>' +
+          '<span class="match-hidden-note">This match is hidden.</span>' +
         '</div>' +
         '<div class="snippet full-snippet">' +
           esc(hit.before) +
           '<mark>' + esc(hit.found) + '</mark>' +
           esc(hit.after) +
         '</div>';
+
+      occ.querySelector('.match-hide-input').addEventListener('change', (e) => toggleMatchHidden(e.target));
 
       const limited = document.createElement('div');
       limited.className = 'snippet limited-snippet';
@@ -871,14 +1012,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   }
 
   document.getElementById('lineContextSlider').addEventListener('input', refreshLimitedContext);
-
-  function applyFullContextVisibility() {
-    const hide = document.getElementById('limitedOnlyInput').checked;
-    document.querySelectorAll('.full-snippet').forEach((el) => {
-      el.style.display = hide ? 'none' : '';
-    });
-  }
-
   document.getElementById('limitedOnlyInput').addEventListener('change', applyFullContextVisibility);
 </script>
 </body>
