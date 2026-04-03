@@ -595,7 +595,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <input type="range" id="lineContextSlider" min="0" max="8" value="0">
       <span><strong id="lineContextValue">0</strong> line(s) before/after</span>
       <label class="checkbox-opt" style="margin-left:14px">
-        <input type="checkbox" id="limitedOnlyInput">
+        <input type="checkbox" id="limitedOnlyInput" checked>
         Show only limited context
       </label>
     </div>
@@ -693,7 +693,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     document.getElementById('resultsList').innerHTML = '';
     document.getElementById('lineContextSlider').value = '0';
     document.getElementById('lineContextValue').textContent = '0';
-    document.getElementById('limitedOnlyInput').checked = false;
     setProgress(0);
     document.getElementById('progText').textContent = 'Starting…';
     setSearching(true);
