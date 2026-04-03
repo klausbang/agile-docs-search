@@ -43,11 +43,14 @@ MAX_LINE_CONTEXT = 8  # max lines before/after sent for limited context view
 # ── PDF helpers ────────────────────────────────────────────────────────────────
 def get_snippets(page_text: str, term: str, full_word: bool, case_sensitive: bool) -> list[dict]:
   """Return all occurrence snippets for *term* in *page_text* with selected options."""
-  # Normalize each line so line-based context and character context stay aligned.
-  raw_lines = page_text.splitlines()
-  lines = [re.sub(r"[ \t]+", " ", ln).strip() for ln in raw_lines]
+  # Keep exact line boundaries so slider=0 always maps to only the hit line.
+  lines = page_text.splitlines()
+  if not lines:
+    lines = [""]
+
+  # Light whitespace normalization for matching readability, without changing lines.
+  lines = [re.sub(r"[ \t]+", " ", ln) for ln in lines]
   text = "\n".join(lines)
-  text = re.sub(r"\n{3,}", "\n\n", text)
 
   pattern_str = re.escape(term)
   if full_word:

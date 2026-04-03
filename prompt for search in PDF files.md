@@ -14,6 +14,10 @@ Archive to Git and GitHub: user name klausbang, email: klaus.bang.andersen@gmail
 Ignore the downloads folder when archiving.
 
 Updates:
-Add search options as normally found in text search functionality, e.g. "only full word", as with search string "demo", "demo", "demo.", "demo," is found, but "demonstrate" is ignored. Sase sensitive. Make the options as check boxes to be selcted/deselected.
+1) Add search options as normally found in text search functionality, e.g. "only full word", as with search string "demo", "demo", "demo.", "demo," is found, but "demonstrate" is ignored. Sase sensitive. Make the options as check boxes to be selcted/deselected.
 
-Make an additional search out put with limited context - show only the line itself where the search word/sentence is found and add a slider that can extend the limited context to more lines before and after.
+2) Make an additional search out put with limited context - show only the line itself where the search word/sentence is found and add a slider that can extend the limited context to more lines before and after.
+
+3) The Line context slider and the show limited context functionality, needs some modifications:
+a) when line context slider is at 0, only the line that contain the search word shall be shown.
+b) when the line context slider is at e.g., 1, it means show the line before the found text, show the line with the foud text and show the line after the found text.
