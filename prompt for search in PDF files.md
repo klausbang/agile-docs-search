@@ -21,3 +21,6 @@ Updates:
 3) The Line context slider and the show limited context functionality, needs some modifications:
 a) when line context slider is at 0, only the line that contain the search word shall be shown.
 b) when the line context slider is at e.g., 1, it means show the line before the found text, show the line with the foud text and show the line after the found text.
+
+4) In the output field both the full context and the limited context (controlled with the slider) are shown. Add an option to show only the limited context. Add this option selector next to the limited context slider.
+ 

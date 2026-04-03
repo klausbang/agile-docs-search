@@ -594,6 +594,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <span>Line context:</span>
       <input type="range" id="lineContextSlider" min="0" max="8" value="0">
       <span><strong id="lineContextValue">0</strong> line(s) before/after</span>
+      <label class="checkbox-opt" style="margin-left:14px">
+        <input type="checkbox" id="limitedOnlyInput">
+        Show only limited context
+      </label>
     </div>
     <div id="resultsList"></div>
   </main>
@@ -689,6 +693,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     document.getElementById('resultsList').innerHTML = '';
     document.getElementById('lineContextSlider').value = '0';
     document.getElementById('lineContextValue').textContent = '0';
+    document.getElementById('limitedOnlyInput').checked = false;
     setProgress(0);
     document.getElementById('progText').textContent = 'Starting…';
     setSearching(true);
@@ -823,7 +828,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
           '<span class="occ-page"><a href="' + pdfUrl + '" target="_blank">Page ' + hit.page + '</a></span>' +
           '<span class="occ-term">' + esc(hit.term) + '</span>' +
         '</div>' +
-        '<div class="snippet">' +
+        '<div class="snippet full-snippet">' +
           esc(hit.before) +
           '<mark>' + esc(hit.found) + '</mark>' +
           esc(hit.after) +
@@ -852,6 +857,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     card.appendChild(body);
 
     document.getElementById('resultsList').appendChild(card);
+    applyFullContextVisibility();
     card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
@@ -866,6 +872,15 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   }
 
   document.getElementById('lineContextSlider').addEventListener('input', refreshLimitedContext);
+
+  function applyFullContextVisibility() {
+    const hide = document.getElementById('limitedOnlyInput').checked;
+    document.querySelectorAll('.full-snippet').forEach((el) => {
+      el.style.display = hide ? 'none' : '';
+    });
+  }
+
+  document.getElementById('limitedOnlyInput').addEventListener('change', applyFullContextVisibility);
 </script>
 </body>
 </html>"""
