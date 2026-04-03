@@ -12,3 +12,8 @@ For each occurence of the search findings, the following shall be shown:
 
 Archive to Git and GitHub: user name klausbang, email: klaus.bang.andersen@gmail.com.
 Ignore the downloads folder when archiving.
+
+Updates:
+Add search options as normally found in text search functionality, e.g. "only full word", as with search string "demo", "demo", "demo.", "demo," is found, but "demonstrate" is ignored. Sase sensitive. Make the options as check boxes to be selcted/deselected.
+
+Make an additional search out put with limited context - show only the line itself where the search word/sentence is found and add a slider that can extend the limited context to more lines before and after.

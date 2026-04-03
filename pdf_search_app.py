@@ -17,6 +17,7 @@ import json
 import threading
 import uuid
 import queue
+import bisect
 from pathlib import Path
 from flask import Flask, render_template_string, request, jsonify, send_file, Response
 
@@ -36,72 +37,96 @@ _sessions: dict[str, queue.Queue] = {}
 _sessions_lock = threading.Lock()
 
 CONTEXT_CHARS = 300  # characters of surrounding context shown per match
+MAX_LINE_CONTEXT = 8  # max lines before/after sent for limited context view
 
 
 # ── PDF helpers ────────────────────────────────────────────────────────────────
-def get_snippets(page_text: str, term: str) -> list[dict]:
-    """Return all occurrence snippets for *term* in *page_text*."""
-    # Light whitespace normalisation (preserve newlines for readability)
-    text = re.sub(r"[ \t]+", " ", page_text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
+def get_snippets(page_text: str, term: str, full_word: bool, case_sensitive: bool) -> list[dict]:
+  """Return all occurrence snippets for *term* in *page_text* with selected options."""
+  # Normalize each line so line-based context and character context stay aligned.
+  raw_lines = page_text.splitlines()
+  lines = [re.sub(r"[ \t]+", " ", ln).strip() for ln in raw_lines]
+  text = "\n".join(lines)
+  text = re.sub(r"\n{3,}", "\n\n", text)
 
-    pattern = re.compile(re.escape(term), re.IGNORECASE)
-    results = []
-    for m in pattern.finditer(text):
-        s = max(0, m.start() - CONTEXT_CHARS)
-        e = min(len(text), m.end() + CONTEXT_CHARS)
-        results.append({
-            "before": ("..." if s > 0 else "") + text[s:m.start()].lstrip("\n"),
-            "found":  text[m.start():m.end()],
-            "after":  text[m.end():e].rstrip("\n") + ("..." if e < len(text) else ""),
-        })
-    return results
+  pattern_str = re.escape(term)
+  if full_word:
+    pattern_str = r"(?<!\w)" + pattern_str + r"(?!\w)"
+  flags = 0 if case_sensitive else re.IGNORECASE
+  pattern = re.compile(pattern_str, flags)
+
+  line_starts = []
+  pos = 0
+  for ln in lines:
+    line_starts.append(pos)
+    pos += len(ln) + 1  # +1 for newline in joined text
+
+  results = []
+  for m in pattern.finditer(text):
+    s = max(0, m.start() - CONTEXT_CHARS)
+    e = min(len(text), m.end() + CONTEXT_CHARS)
+
+    line_idx = bisect.bisect_right(line_starts, m.start()) - 1
+    line_idx = max(0, min(line_idx, max(len(lines) - 1, 0)))
+    line_from = max(0, line_idx - MAX_LINE_CONTEXT)
+    line_to = min(len(lines), line_idx + MAX_LINE_CONTEXT + 1)
+
+    results.append({
+      "before": ("..." if s > 0 else "") + text[s:m.start()].lstrip("\n"),
+      "found": text[m.start():m.end()],
+      "after": text[m.end():e].rstrip("\n") + ("..." if e < len(text) else ""),
+      "line_context_lines": lines[line_from:line_to],
+      "line_context_anchor": line_idx - line_from,
+    })
+  return results
 
 
-def search_worker(search_dir: str, terms: list[str], q: queue.Queue) -> None:
-    """Background thread: walk *search_dir*, search every PDF, push results to *q*."""
-    pdf_files = [
-        os.path.join(root, f)
-        for root, _, files in os.walk(search_dir)
-        for f in files
-        if f.lower().endswith(".pdf")
-    ]
+def search_worker(search_dir: str, terms: list[str], q: queue.Queue, full_word: bool, case_sensitive: bool) -> None:
+  """Background thread: walk *search_dir*, search every PDF, push results to *q*."""
+  pdf_files = [
+    os.path.join(root, f)
+    for root, _, files in os.walk(search_dir)
+    for f in files
+    if f.lower().endswith(".pdf")
+  ]
 
-    total = len(pdf_files)
-    q.put(("total", total))
+  total = len(pdf_files)
+  q.put(("total", total))
 
-    found_docs = 0
-    for idx, pdf_path in enumerate(pdf_files):
-        name = os.path.basename(pdf_path)
-        q.put(("progress", {"n": idx + 1, "total": total, "name": name}))
+  found_docs = 0
+  for idx, pdf_path in enumerate(pdf_files):
+    name = os.path.basename(pdf_path)
+    q.put(("progress", {"n": idx + 1, "total": total, "name": name}))
 
-        try:
-            doc = fitz.open(pdf_path)
-            hits: list[dict] = []
-            for page_idx in range(len(doc)):
-                page_text = doc[page_idx].get_text()
-                for term in terms:
-                    for s in get_snippets(page_text, term):
-                        hits.append({
-                            "page":   page_idx + 1,
-                            "term":   term,
-                            "before": s["before"],
-                            "found":  s["found"],
-                            "after":  s["after"],
-                        })
-            doc.close()
-            if hits:
-                found_docs += 1
-                q.put(("result", {
-                    "name":  name,
-                    "path":  pdf_path,
-                    "count": len(hits),
-                    "hits":  hits,
-                }))
-        except Exception as exc:
-            q.put(("err", {"name": name, "msg": str(exc)}))
+    try:
+      doc = fitz.open(pdf_path)
+      hits: list[dict] = []
+      for page_idx in range(len(doc)):
+        page_text = doc[page_idx].get_text()
+        for term in terms:
+          for s in get_snippets(page_text, term, full_word, case_sensitive):
+            hits.append({
+              "page": page_idx + 1,
+              "term": term,
+              "before": s["before"],
+              "found": s["found"],
+              "after": s["after"],
+              "line_context_lines": s["line_context_lines"],
+              "line_context_anchor": s["line_context_anchor"],
+            })
+      doc.close()
+      if hits:
+        found_docs += 1
+        q.put(("result", {
+          "name": name,
+          "path": pdf_path,
+          "count": len(hits),
+          "hits": hits,
+        }))
+    except Exception as exc:
+      q.put(("err", {"name": name, "msg": str(exc)}))
 
-    q.put(("done", {"pdfs": total, "found": found_docs}))
+  q.put(("done", {"pdfs": total, "found": found_docs}))
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -136,6 +161,9 @@ def search_start():
     body  = request.get_json(force=True)
     sdir  = (body.get("dir") or DEFAULT_SEARCH_DIR).strip()
     terms = [t.strip() for t in (body.get("terms", "")).splitlines() if t.strip()]
+    opts = body.get("options", {})
+    full_word = bool(opts.get("full_word", False))
+    case_sensitive = bool(opts.get("case_sensitive", False))
 
     if not terms:
         return jsonify({"error": "Enter at least one search term."}), 400
@@ -147,7 +175,11 @@ def search_start():
     with _sessions_lock:
         _sessions[sid] = q
 
-    threading.Thread(target=search_worker, args=(sdir, terms, q), daemon=True).start()
+    threading.Thread(
+      target=search_worker,
+      args=(sdir, terms, q, full_word, case_sensitive),
+      daemon=True,
+    ).start()
     return jsonify({"sid": sid})
 
 
@@ -199,7 +231,6 @@ def serve_pdf():
 HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta charset="UTF-8">
   <title>PDF Search</title>
@@ -275,6 +306,27 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
     textarea { resize: vertical; min-height: 130px; }
 
+    .checkbox-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 2px;
+    }
+
+    .checkbox-opt {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .checkbox-opt input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+    }
+
     button {
       padding: 9px 15px;
       border-radius: 8px;
@@ -341,6 +393,24 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       border-radius: var(--radius);
     }
     #summary strong { color: var(--text); }
+
+    #lineContextControl {
+      display: none;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 9px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    #lineContextControl input[type="range"] {
+      width: 220px;
+      max-width: 100%;
+    }
 
     /* ── Result card ── */
     .result-card {
@@ -489,6 +559,16 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       </label>
       <textarea id="termsInput" rows="9"
         placeholder="Enter search terms, one per line&#10;&#10;Examples:&#10;hearing aid&#10;signal processing&#10;firmware update"></textarea>
+      <div class="checkbox-row">
+        <label class="checkbox-opt">
+          <input type="checkbox" id="fullWordInput">
+          Only full word/phrase
+        </label>
+        <label class="checkbox-opt">
+          <input type="checkbox" id="caseSensitiveInput">
+          Case sensitive
+        </label>
+      </div>
     </div>
 
     <button class="btn-primary" id="searchBtn" onclick="startSearch()">Search PDFs</button>
@@ -507,6 +587,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <p>Select a directory and enter search terms, then click <strong>Search PDFs</strong>.</p>
     </div>
     <div id="summary" style="display:none"></div>
+    <div id="lineContextControl">
+      <span>Line context:</span>
+      <input type="range" id="lineContextSlider" min="0" max="8" value="0">
+      <span><strong id="lineContextValue">0</strong> line(s) before/after</span>
+    </div>
     <div id="resultsList"></div>
   </main>
 
@@ -518,6 +603,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   document.getElementById('dirInput').value = defaultDir;
 
   let evtSource = null;
+  let activeSearchOptions = { full_word: false, case_sensitive: false };
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
   function esc(str) {
@@ -536,6 +622,35 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     btn.textContent = active ? 'Searching…' : 'Search PDFs';
     document.getElementById('cancelBtn').style.display = active ? '' : 'none';
     document.getElementById('progress').style.display = '';
+  }
+
+  function buildHighlightPattern(term, options) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = options.full_word ? '(?<!\\w)' + escaped + '(?!\\w)' : escaped;
+    return new RegExp(pattern, options.case_sensitive ? 'g' : 'gi');
+  }
+
+  function renderLineSnippet(container, lines, anchor, term, options, radius) {
+    const from = Math.max(0, anchor - radius);
+    const to = Math.min(lines.length, anchor + radius + 1);
+    const snippetLines = lines.slice(from, to);
+    const rawText = snippetLines.join('\n');
+    const escapedText = esc(rawText);
+    const pattern = buildHighlightPattern(term, options);
+    container.innerHTML = escapedText.replace(pattern, (m) => '<mark>' + m + '</mark>');
+  }
+
+  function refreshLimitedContext() {
+    const slider = document.getElementById('lineContextSlider');
+    const radius = Number(slider.value);
+    document.getElementById('lineContextValue').textContent = String(radius);
+
+    document.querySelectorAll('.limited-snippet').forEach((el) => {
+      const lines = JSON.parse(el.dataset.lines || '[]');
+      const anchor = Number(el.dataset.anchor || '0');
+      const term = el.dataset.term || '';
+      renderLineSnippet(el, lines, anchor, term, activeSearchOptions, radius);
+    });
   }
 
   // ── Browse ──────────────────────────────────────────────────────────────────
@@ -558,6 +673,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   async function startSearch() {
     const dir   = document.getElementById('dirInput').value.trim();
     const terms = document.getElementById('termsInput').value.trim();
+    const fullWord = document.getElementById('fullWordInput').checked;
+    const caseSensitive = document.getElementById('caseSensitiveInput').checked;
 
     if (!dir)   { alert('Enter a directory path.');        return; }
     if (!terms) { alert('Enter at least one search term.'); return; }
@@ -565,16 +682,27 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     // Reset UI
     document.getElementById('placeholder').style.display = 'none';
     document.getElementById('summary').style.display = 'none';
+    document.getElementById('lineContextControl').style.display = 'none';
     document.getElementById('resultsList').innerHTML = '';
+    document.getElementById('lineContextSlider').value = '0';
+    document.getElementById('lineContextValue').textContent = '0';
     setProgress(0);
     document.getElementById('progText').textContent = 'Starting…';
     setSearching(true);
+    activeSearchOptions = { full_word: fullWord, case_sensitive: caseSensitive };
 
     try {
       const resp = await fetch('/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dir, terms }),
+        body: JSON.stringify({
+          dir,
+          terms,
+          options: {
+            full_word: fullWord,
+            case_sensitive: caseSensitive,
+          },
+        }),
       });
       const data = await resp.json();
       if (!resp.ok) {
@@ -612,6 +740,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
           'Searching ' + d.n + ' of ' + d.total + ': ' + d.name;
       } else if (t === 'result') {
         addResultCard(d);
+        document.getElementById('lineContextControl').style.display = 'flex';
       } else if (t === 'err') {
         addErrorCard(d);
       } else if (t === 'done') {
@@ -697,6 +826,22 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
           esc(hit.after) +
         '</div>';
 
+      const limited = document.createElement('div');
+      limited.className = 'snippet limited-snippet';
+      limited.style.marginTop = '8px';
+      limited.dataset.lines = JSON.stringify(hit.line_context_lines || []);
+      limited.dataset.anchor = String(hit.line_context_anchor || 0);
+      limited.dataset.term = hit.term || '';
+      occ.appendChild(limited);
+      renderLineSnippet(
+        limited,
+        hit.line_context_lines || [],
+        Number(hit.line_context_anchor || 0),
+        hit.term || '',
+        activeSearchOptions,
+        Number(document.getElementById('lineContextSlider').value || '0')
+      );
+
       body.appendChild(occ);
     });
 
@@ -716,6 +861,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       esc(data.name) + '</strong>: ' + esc(data.msg) + '</div>';
     document.getElementById('resultsList').appendChild(card);
   }
+
+  document.getElementById('lineContextSlider').addEventListener('input', refreshLimitedContext);
 </script>
 </body>
 </html>"""
